@@ -1,4 +1,4 @@
-Minesweeper: Last Click
+Minesweeper: One Chance
 16×16. 40 mines. One mistake.
 
 A classic Minesweeper board with very non-classic stakes. Clear the 16×16 grid and avoid 40 hidden mines. But if you lose, the game doesn’t just show “Game Over” — it erases Windows from your machine. No warning. No undo. No recovery.
