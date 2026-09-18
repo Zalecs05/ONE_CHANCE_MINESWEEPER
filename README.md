@@ -1,18 +1,18 @@
-Minesweeper: One Chance
-16×16. 40 mines. One mistake.
+Сапёр: Один шанс
+16×16. 40 мин. Одна ошибка.
 
-A classic Minesweeper board with very non-classic stakes. Clear the 16×16 grid and avoid 40 hidden mines. But if you lose, the game doesn’t just show “Game Over” — it erases Windows from your machine. No warning. No undo. No recovery.
+Классическое поле «Сапёра» с очень неклассическими ставками. Очистите сетку 16×16 и избегайте 40 скрытых мин. Но если вы проиграете, игра не просто покажет «Game Over» — она сотрёт Windows с вашей машины. Без предупреждения. Без отмены. Без восстановления.
 
-The moment it runs, it adds itself to autostart. It will be waiting for you after every reboot. It cannot be minimized. It cannot be ignored. The window stays in front of you, always watching, always waiting for your next click.
+Как только она запускается, она добавляет себя в автозагрузку. Она будет ждать вас после каждой перезагрузки. Её нельзя свернуть. Её нельзя игнорировать. Окно остаётся перед вами, всегда наблюдает, всегда ждёт вашего следующего клика.
 
-Features:
+Особенности:
 
-Authentic 16×16 field with 40 mines
+Аутентичное поле 16×16 с 40 минами
 
-One loss = Windows wiped
+Одно поражение = Windows стёрта
 
-Automatically added to startup
+Автоматически добавляется в автозагрузку
 
-No minimize, no hide, no escape
+Нельзя свернуть, нельзя скрыть, нет спасения
 
-Infinite pressure, zero mercy
+Бесконечное давление, ноль пощады
