@@ -16,5 +16,3 @@ Automatically added to startup
 No minimize, no hide, no escape
 
 Infinite pressure, zero mercy
-
-Warning: fictional joke concept. Do not actually build or run software that destroys someone’s OS.
