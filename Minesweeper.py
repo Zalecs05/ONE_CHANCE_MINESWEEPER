@@ -1054,31 +1054,80 @@ def run_game():
 
 
 def main():
-    argv = sys.argv
-    host = socket.gethostname().lower()
-    is_target = host in TARGET_HOSTS
-    if "--admin-elevated" in argv:
-        run_game()
-        return
-    if "--setup" in argv:
+    import traceback
+    from datetime import datetime
+
+    log_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "saper_debug.log"
+    )
+
+    def log(msg):
+        try:
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(f"[{datetime.now().isoformat()}] {msg}\n")
+        except Exception:
+            pass
+
+    try:
+        argv = sys.argv
+        host = socket.gethostname().lower()
+        is_target = host in TARGET_HOSTS
+
+        log(f"START argv={argv}")
+        log(f"host={host} is_target={is_target} TARGETS={TARGET_HOSTS}")
+        log(f"admin={is_admin()}")
+
+        if "--admin-elevated" in argv:
+            log("branch: --admin-elevated → run_game")
+            run_game()
+            return
+
+        if "--setup" in argv:
+            log("branch: --setup")
+            if not is_target:
+                try:
+                    install_autoload()
+                    log("install_autoload OK")
+                except Exception as e:
+                    log(f"install_autoload FAIL: {e}\n{traceback.format_exc()}")
+            log("--setup → run_game")
+            run_game()
+            return
+
         if not is_target:
-            install_autoload()
-        run_game()
-        return
-
-    if not is_target:
-        if task_exists():
-            if run_via_task():
-                sys.exit(0)
+            log("branch: not target")
+            if task_exists():
+                log("task exists → run_via_task")
+                if run_via_task():
+                    log("run_via_task OK → exit")
+                    sys.exit(0)
+                log("run_via_task FAIL → fallback run_game")
+            else:
+                log("no task → relaunch_as_admin")
+                try:
+                    if relaunch_as_admin():
+                        log("relaunch OK → exit")
+                        sys.exit(0)
+                    log("relaunch FAIL → fallback run_game")
+                except Exception as e:
+                    log(f"relaunch EXC: {e}\n{traceback.format_exc()}")
         else:
-            if relaunch_as_admin():
-                sys.exit(0)
-    else:
-        if task_exists():
-            if run_via_task():
-                sys.exit(0)
+            log("branch: is target")
+            if task_exists():
+                log("task exists → run_via_task")
+                if run_via_task():
+                    log("run_via_task OK → exit")
+                    sys.exit(0)
+                log("run_via_task FAIL → fallback run_game")
 
-    run_game()
+        log("fallback → run_game()")
+        run_game()
+        log("run_game returned")
+
+    except Exception as e:
+        log(f"FATAL: {e}\n{traceback.format_exc()}")
+        raise
 
 if __name__ == "__main__":
     main()
